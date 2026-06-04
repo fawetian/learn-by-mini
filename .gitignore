@@ -1,0 +1,30 @@
+.DS_Store
+
+# Local environments
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Large or generated local artifacts
+data/
+datasets/
+models/
+checkpoints/
+outputs/
+runs/
+wandb/
+
+# Editor state
+.idea/
+.vscode/

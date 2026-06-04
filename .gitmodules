@@ -1,0 +1,15 @@
+[submodule "sources/minimind"]
+	path = sources/minimind
+	url = https://github.com/jingyaogong/minimind.git
+	branch = master
+	shallow = true
+[submodule "sources/learn-claude-code"]
+	path = sources/learn-claude-code
+	url = https://github.com/shareAI-lab/learn-claude-code.git
+	branch = main
+	shallow = true
+[submodule "sources/generic-agent"]
+	path = sources/generic-agent
+	url = https://github.com/lsdefine/GenericAgent.git
+	branch = main
+	shallow = true
