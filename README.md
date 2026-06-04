@@ -3,20 +3,25 @@
 通过学习和重建足够小、足够具体的样本，理解复杂系统和复杂事务。
 当前第一批样本聚焦 LLM、agent 和自进化系统。
 
-## 源码项目
+## 资源分类
 
-- [MiniMind](sources/minimind)：从零开始的小型 LLM 训练流水线。
-- [Learn Claude Code](sources/learn-claude-code)：受 Claude Code 启发的轻量
-  agent 运行框架和教程序列。
-- [GenericAgent](sources/generic-agent)：极简自进化 agent 框架，包含小型
-  agent 循环、原子工具、记忆系统和技能固化机制。
+- [LLM 训练](resource/llm-training)：从零理解模型训练流水线。
+  - [MiniMind](resource/llm-training/minimind)：从零开始的小型 LLM 训练流水线。
+- [Agent](resource/agent)：理解 agent 运行框架、自主执行和自进化机制。
+  - [Learn Claude Code](resource/agent/learn-claude-code)：受 Claude Code 启发的轻量
+    agent 运行框架和教程序列。
+  - [GenericAgent](resource/agent/generic-agent)：极简自进化 agent 框架，包含小型
+    agent 循环、原子工具、记忆系统和技能固化机制。
+- [任务队列](resource/task-queue)：理解后台任务、队列、worker 和调度。
+  - [RQ](resource/task-queue/rq)：基于 Redis/Valkey 的 Python 任务队列。
+  - [Asynq](resource/task-queue/asynq)：基于 Redis 的 Go 分布式任务队列。
 
-这些项目都以 Git 子模块的形式放在 `sources/` 下。
+这些样本项目都以 Git 子模块的形式放在 `resource/` 下。
 
 ## 目录结构
 
 ```text
-sources/                 作为学习参考的上游源码项目
+resource/                按主题归档的复杂系统样本
 tutorials/               分步骤教程和本地走读记录
 notes/                   阅读笔记、设计笔记和问题记录
 experiments/             可在本地运行的小实验和原型
@@ -36,10 +41,10 @@ git clone --recurse-submodules <repo-url>
 make submodules
 ```
 
-更新上游学习项目：
+更新上游主题资源：
 
 ```bash
-make update-sources
+make update-resources
 ```
 
 ## 学习路线

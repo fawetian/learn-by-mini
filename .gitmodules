@@ -1,15 +1,25 @@
-[submodule "sources/minimind"]
-	path = sources/minimind
+[submodule "resource/llm-training/minimind"]
+	path = resource/llm-training/minimind
 	url = https://github.com/jingyaogong/minimind.git
 	branch = master
 	shallow = true
-[submodule "sources/learn-claude-code"]
-	path = sources/learn-claude-code
+[submodule "resource/agent/learn-claude-code"]
+	path = resource/agent/learn-claude-code
 	url = https://github.com/shareAI-lab/learn-claude-code.git
 	branch = main
 	shallow = true
-[submodule "sources/generic-agent"]
-	path = sources/generic-agent
+[submodule "resource/agent/generic-agent"]
+	path = resource/agent/generic-agent
 	url = https://github.com/lsdefine/GenericAgent.git
 	branch = main
+	shallow = true
+[submodule "resource/task-queue/rq"]
+	path = resource/task-queue/rq
+	url = https://github.com/TTsWorld/rq.git
+	branch = master
+	shallow = true
+[submodule "resource/task-queue/asynq"]
+	path = resource/task-queue/asynq
+	url = https://github.com/hibiken/asynq.git
+	branch = master
 	shallow = true

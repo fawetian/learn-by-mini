@@ -3,7 +3,7 @@
 目标：理解一个极简自主 agent 如何从小型种子运行时，逐步进化成可复用的技能系统，
 然后用小实验重建这个机制。
 
-以 `sources/generic-agent` 作为上游参考。第一轮源码阅读建议重点关注：
+以 `resource/agent/generic-agent` 作为上游参考。第一轮源码阅读建议重点关注：
 
 1. `agent_loop.py` 中的最小 agent 循环。
 2. `llmcore.py` 中的 LLM 服务提供方抽象。

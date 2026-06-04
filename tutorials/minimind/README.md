@@ -1,7 +1,7 @@
 # MiniMind 学习路线
 
 目标：通过重建 LLM 训练系统中最小、最有用的组件，理解训练系统的核心结构，
-然后把每个组件和 `sources/minimind` 中的上游实现进行对比。
+然后把每个组件和 `resource/llm-training/minimind` 中的上游实现进行对比。
 
 初始章节规划：
 
