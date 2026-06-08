@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Asynq 任务处理流程图与 Redis Key</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --panel: #0f172a;
+      --text: #f8fafc;
+      --muted: #cbd5e1;
+      --dim: #94a3b8;
+      --line: #64748b;
+      --cyan: #22d3ee;
+      --green: #34d399;
+      --orange: #fb923c;
+      --amber: #fbbf24;
+      --rose: #fb7185;
+      --purple: #a78bfa;
+      --blue: #60a5fa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% 9%, rgba(34, 211, 238, 0.16), transparent 26%),
+        radial-gradient(circle at 86% 12%, rgba(167, 139, 250, 0.14), transparent 25%),
+        linear-gradient(180deg, #020617 0%, #0f172a 100%);
+      color: var(--text);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .page {
+      width: 1600px;
+      margin: 0 auto;
+      padding: 30px 34px 28px;
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .dot {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 8px rgba(52, 211, 153, 0.12), 0 0 32px rgba(52, 211, 153, 0.72);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 8px 0 0 27px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .badge {
+      padding: 10px 13px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.78);
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .canvas {
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.58);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .footer {
+      margin-top: 12px;
+      color: #64748b;
+      font-size: 11px;
+      text-align: right;
+    }
+
+    .node-title { fill: #f8fafc; font-size: 14px; font-weight: 780; }
+    .node-sub { fill: #cbd5e1; font-size: 10px; }
+    .key { fill: #e2e8f0; font-size: 7.7px; font-weight: 700; }
+    .tiny { fill: #94a3b8; font-size: 9px; }
+    .edge { fill: #cbd5e1; font-size: 7.3px; font-weight: 700; }
+    .lane { fill: #e2e8f0; font-size: 13px; font-weight: 760; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <div class="title">
+          <div class="dot"></div>
+          <h1>Asynq 任务处理流程图与 Redis Key</h1>
+        </div>
+        <p class="subtitle">真正按流程走：入队、到期转发、消费执行、结果分支、崩溃恢复；每个节点标出对应读写的 Redis key。</p>
+      </div>
+      <div class="badge">队列占位：<strong>q</strong>，例：<strong>asynq:{default}:pending</strong></div>
+    </header>
+
+    <section class="canvas">
+      <svg viewBox="0 0 1532 1040" role="img" aria-label="Asynq task processing flowchart with Redis keys">
+        <defs>
+          <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+            <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#1e293b" stroke-width="0.65"/>
+          </pattern>
+          <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+            <path d="M 0 0 L 10 4 L 0 8 z" fill="#64748b"/>
+          </marker>
+          <marker id="arrow-green" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+            <path d="M 0 0 L 10 4 L 0 8 z" fill="#34d399"/>
+          </marker>
+          <marker id="arrow-orange" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+            <path d="M 0 0 L 10 4 L 0 8 z" fill="#fb923c"/>
+          </marker>
+          <marker id="arrow-red" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+            <path d="M 0 0 L 10 4 L 0 8 z" fill="#fb7185"/>
+          </marker>
+          <filter id="glow" x="-16%" y="-16%" width="132%" height="132%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        <rect width="1532" height="1040" fill="#020617"/>
+        <rect width="1532" height="1040" fill="url(#grid)" opacity="0.7"/>
+
+        <!-- Lanes -->
+        <rect x="40" y="42" width="1452" height="292" rx="16" fill="rgba(8, 51, 68, 0.18)" stroke="#22d3ee" stroke-width="1.4" stroke-dasharray="8 5"/>
+        <text x="64" y="76" class="lane">入队与到期转发</text>
+
+        <rect x="40" y="374" width="1452" height="360" rx="16" fill="rgba(6, 78, 59, 0.16)" stroke="#34d399" stroke-width="1.4" stroke-dasharray="8 5"/>
+        <text x="64" y="408" class="lane">worker 正常消费主链路</text>
+
+        <rect x="40" y="746" width="1452" height="206" rx="16" fill="rgba(136, 19, 55, 0.15)" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="8 5"/>
+        <text x="64" y="780" class="lane">机器重启 / worker 崩溃恢复链路</text>
+
+        <!-- Top lane nodes -->
+        <g id="task">
+          <rect x="68" y="112" width="156" height="76" rx="38" fill="#0f172a" stroke="#22d3ee" stroke-width="1.7"/>
+          <text x="146" y="143" text-anchor="middle" class="node-title">创建 Task</text>
+          <text x="146" y="165" text-anchor="middle" class="node-sub">Type / Payload</text>
+        </g>
+
+        <g id="enqueue">
+          <rect x="248" y="92" width="248" height="120" rx="10" fill="#0f172a" stroke="#22d3ee" stroke-width="1.7" filter="url(#glow)"/>
+          <text x="372" y="122" text-anchor="middle" class="node-title">Client.Enqueue</text>
+          <text x="372" y="145" text-anchor="middle" class="key">SADD asynq:queues &lt;q&gt;</text>
+          <text x="372" y="164" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; msg &lt;TaskMessage&gt;</text>
+          <text x="372" y="183" text-anchor="middle" class="key">LPUSH asynq:{q}:pending &lt;task_id&gt;</text>
+          <text x="372" y="202" text-anchor="middle" class="key">ZADD asynq:{q}:scheduled &lt;process_at&gt; &lt;task_id&gt;</text>
+        </g>
+
+        <g id="all-queues">
+          <rect x="292" y="224" width="148" height="58" rx="8" fill="#0f172a" stroke="#22d3ee" stroke-width="1.2" stroke-dasharray="5 4"/>
+          <text x="366" y="245" text-anchor="middle" class="node-sub">登记队列</text>
+          <text x="366" y="265" text-anchor="middle" class="key">SADD asynq:queues &lt;q&gt;</text>
+        </g>
+
+        <g id="task-hash">
+          <rect x="510" y="102" width="238" height="96" rx="10" fill="#0f172a" stroke="#a78bfa" stroke-width="1.7"/>
+          <text x="629" y="126" text-anchor="middle" class="node-title">写任务详情</text>
+          <text x="629" y="148" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; msg &lt;TaskMessage&gt;</text>
+          <text x="629" y="168" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; state pending</text>
+          <text x="629" y="188" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; pending_since &lt;now&gt;</text>
+        </g>
+
+        <g id="enqueue-choice">
+          <polygon points="840,92 938,150 840,208 742,150" fill="#0f172a" stroke="#fbbf24" stroke-width="1.7"/>
+          <text x="840" y="145" text-anchor="middle" class="node-title">立即执行？</text>
+          <text x="840" y="166" text-anchor="middle" class="node-sub">ProcessAt / ProcessIn</text>
+        </g>
+
+        <g id="pending">
+          <rect x="1040" y="94" width="202" height="112" rx="10" fill="#0f172a" stroke="#fb923c" stroke-width="1.7"/>
+          <text x="1141" y="124" text-anchor="middle" class="node-title">待消费</text>
+          <text x="1141" y="154" text-anchor="middle" class="key">LPUSH asynq:{q}:pending &lt;task_id&gt;</text>
+          <text x="1141" y="193" text-anchor="middle" class="tiny">processor 从这里抢任务</text>
+        </g>
+
+        <g id="scheduled">
+          <rect x="1040" y="236" width="202" height="76" rx="10" fill="#0f172a" stroke="#fbbf24" stroke-width="1.7"/>
+          <text x="1141" y="260" text-anchor="middle" class="node-title">延迟 / 定时</text>
+          <text x="1141" y="288" text-anchor="middle" class="key">ZADD asynq:{q}:scheduled &lt;process_at&gt; &lt;task_id&gt;</text>
+        </g>
+
+        <g id="forwarder">
+          <rect x="1242" y="134" width="244" height="160" rx="10" fill="#0f172a" stroke="#fb923c" stroke-width="1.7"/>
+          <text x="1364" y="164" text-anchor="middle" class="node-title">forwarder</text>
+          <text x="1364" y="186" text-anchor="middle" class="key">ZRANGEBYSCORE asynq:{q}:scheduled -inf &lt;now&gt;</text>
+          <text x="1364" y="206" text-anchor="middle" class="key">ZRANGEBYSCORE asynq:{q}:retry -inf &lt;now&gt;</text>
+          <text x="1364" y="226" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; state pending</text>
+          <text x="1364" y="246" text-anchor="middle" class="key">LPUSH asynq:{q}:pending &lt;task_id&gt;</text>
+          <text x="1364" y="266" text-anchor="middle" class="key">ZREM asynq:{q}:scheduled &lt;task_id&gt;</text>
+          <text x="1364" y="286" text-anchor="middle" class="key">ZREM asynq:{q}:retry &lt;task_id&gt;</text>
+        </g>
+
+        <!-- Main lane nodes -->
+        <g id="processor">
+          <rect x="92" y="462" width="220" height="104" rx="10" fill="#0f172a" stroke="#34d399" stroke-width="1.7" filter="url(#glow)"/>
+          <text x="202" y="492" text-anchor="middle" class="node-title">processor.Dequeue</text>
+          <text x="202" y="520" text-anchor="middle" class="key">RPOPLPUSH asynq:{q}:pending asynq:{q}:active</text>
+        </g>
+
+        <g id="active-lease">
+          <rect x="344" y="442" width="254" height="144" rx="10" fill="#0f172a" stroke="#34d399" stroke-width="1.7"/>
+          <text x="471" y="472" text-anchor="middle" class="node-title">写执行态</text>
+          <text x="471" y="498" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; state active</text>
+          <text x="471" y="522" text-anchor="middle" class="key">HDEL asynq:{q}:t:&lt;task_id&gt; pending_since</text>
+          <text x="471" y="546" text-anchor="middle" class="key">ZADD asynq:{q}:lease &lt;expire_at&gt; &lt;task_id&gt;</text>
+        </g>
+
+        <g id="load-msg">
+          <rect x="630" y="462" width="226" height="104" rx="10" fill="#0f172a" stroke="#a78bfa" stroke-width="1.7"/>
+          <text x="743" y="494" text-anchor="middle" class="node-title">读取任务内容</text>
+          <text x="743" y="528" text-anchor="middle" class="key">HGET asynq:{q}:t:&lt;task_id&gt; msg</text>
+        </g>
+
+        <g id="handler">
+          <rect x="902" y="452" width="196" height="124" rx="10" fill="#0f172a" stroke="#60a5fa" stroke-width="1.7"/>
+          <text x="1000" y="488" text-anchor="middle" class="node-title">Handler.ProcessTask</text>
+          <text x="1000" y="515" text-anchor="middle" class="node-sub">业务处理函数</text>
+          <text x="1000" y="540" text-anchor="middle" class="tiny">返回 nil / error / SkipRetry</text>
+        </g>
+
+        <g id="success-choice">
+          <polygon points="1220,428 1326,514 1220,600 1114,514" fill="#0f172a" stroke="#fbbf24" stroke-width="1.7"/>
+          <text x="1220" y="508" text-anchor="middle" class="node-title">处理成功？</text>
+          <text x="1220" y="532" text-anchor="middle" class="node-sub">err == nil</text>
+        </g>
+
+        <g id="completed">
+          <rect x="1218" y="608" width="262" height="112" rx="10" fill="#0f172a" stroke="#34d399" stroke-width="1.7"/>
+          <text x="1349" y="634" text-anchor="middle" class="node-title">Done</text>
+          <text x="1349" y="656" text-anchor="middle" class="key">LREM asynq:{q}:active 0 &lt;task_id&gt;</text>
+          <text x="1349" y="674" text-anchor="middle" class="key">ZREM asynq:{q}:lease &lt;task_id&gt;</text>
+          <text x="1349" y="692" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; state completed</text>
+          <text x="1349" y="710" text-anchor="middle" class="key">ZADD asynq:{q}:completed &lt;done_at&gt; &lt;task_id&gt;</text>
+        </g>
+
+        <g id="retry-choice">
+          <polygon points="1000,626 1104,684 1000,742 896,684" fill="#0f172a" stroke="#fb923c" stroke-width="1.7"/>
+          <text x="1000" y="678" text-anchor="middle" class="node-title">还能重试？</text>
+          <text x="1000" y="699" text-anchor="middle" class="node-sub">Retried &lt; Retry</text>
+        </g>
+
+        <g id="retry">
+          <rect x="646" y="632" width="254" height="112" rx="10" fill="#0f172a" stroke="#fb923c" stroke-width="1.7"/>
+          <text x="773" y="658" text-anchor="middle" class="node-title">Retry</text>
+          <text x="773" y="680" text-anchor="middle" class="key">LREM asynq:{q}:active 0 &lt;task_id&gt;</text>
+          <text x="773" y="698" text-anchor="middle" class="key">ZREM asynq:{q}:lease &lt;task_id&gt;</text>
+          <text x="773" y="716" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; state retry</text>
+          <text x="773" y="734" text-anchor="middle" class="key">ZADD asynq:{q}:retry &lt;retry_at&gt; &lt;task_id&gt;</text>
+        </g>
+
+        <g id="archive">
+          <rect x="1096" y="760" width="262" height="112" rx="10" fill="#0f172a" stroke="#fb7185" stroke-width="1.7"/>
+          <text x="1227" y="786" text-anchor="middle" class="node-title">Archive</text>
+          <text x="1227" y="808" text-anchor="middle" class="key">LREM asynq:{q}:active 0 &lt;task_id&gt;</text>
+          <text x="1227" y="826" text-anchor="middle" class="key">ZREM asynq:{q}:lease &lt;task_id&gt;</text>
+          <text x="1227" y="844" text-anchor="middle" class="key">HSET asynq:{q}:t:&lt;task_id&gt; state archived</text>
+          <text x="1227" y="862" text-anchor="middle" class="key">ZADD asynq:{q}:archived &lt;died_at&gt; &lt;task_id&gt;</text>
+        </g>
+
+        <!-- Recover lane nodes -->
+        <g id="lease-expired">
+          <rect x="114" y="810" width="214" height="86" rx="10" fill="#0f172a" stroke="#fb7185" stroke-width="1.7"/>
+          <text x="221" y="838" text-anchor="middle" class="node-title">worker 崩溃</text>
+          <text x="221" y="862" text-anchor="middle" class="node-sub">不会新写 Redis</text>
+          <text x="221" y="882" text-anchor="middle" class="tiny">已有 lease 过期</text>
+        </g>
+
+        <g id="recoverer">
+          <rect x="394" y="804" width="266" height="98" rx="10" fill="#0f172a" stroke="#fb7185" stroke-width="1.7"/>
+          <text x="527" y="834" text-anchor="middle" class="node-title">recoverer 扫描</text>
+          <text x="527" y="858" text-anchor="middle" class="key">ZRANGEBYSCORE asynq:{q}:lease -inf &lt;cutoff&gt;</text>
+        </g>
+
+        <g id="recover-choice">
+          <polygon points="772,792 876,854 772,916 668,854" fill="#0f172a" stroke="#fb923c" stroke-width="1.7"/>
+          <text x="772" y="849" text-anchor="middle" class="node-title">恢复后可重试？</text>
+          <text x="772" y="871" text-anchor="middle" class="node-sub">Retried &lt; Retry</text>
+        </g>
+
+        <!-- Observability keys -->
+        <g id="heartbeat">
+          <rect x="1088" y="902" width="326" height="76" rx="10" fill="#0f172a" stroke="#94a3b8" stroke-width="1.4"/>
+          <text x="1251" y="926" text-anchor="middle" class="node-title">运行态观测</text>
+          <text x="1251" y="948" text-anchor="middle" class="key">SETEX asynq:servers:{host:pid:sid} &lt;ttl&gt; &lt;info&gt;</text>
+          <text x="1251" y="968" text-anchor="middle" class="key">HSET asynq:workers:{host:pid:sid} &lt;wid&gt; &lt;data&gt;</text>
+        </g>
+
+        <!-- Arrows top lane -->
+        <path d="M224 150 L248 150" fill="none" stroke="#64748b" stroke-width="2.2" marker-end="url(#arrow)"/>
+        <path d="M372 212 L372 224" fill="none" stroke="#22d3ee" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+        <path d="M496 150 L510 150" fill="none" stroke="#64748b" stroke-width="2.2" marker-end="url(#arrow)"/>
+        <text x="503" y="132" text-anchor="middle" class="edge">写 task hash</text>
+        <path d="M738 150 L742 150" fill="none" stroke="#64748b" stroke-width="2.2" marker-end="url(#arrow)"/>
+        <path d="M938 150 L1040 150" fill="none" stroke="#fb923c" stroke-width="2.2" marker-end="url(#arrow-orange)"/>
+        <text x="990" y="138" text-anchor="middle" class="edge">立即入队</text>
+        <path d="M840 208 C 840 274, 960 274, 1040 274" fill="none" stroke="#fbbf24" stroke-width="2.2" marker-end="url(#arrow-orange)"/>
+        <text x="928" y="264" text-anchor="middle" class="edge">写入定时集合</text>
+        <path d="M1141 312 C 1141 326, 1364 326, 1364 294" fill="none" stroke="#fb923c" stroke-width="2.2" marker-end="url(#arrow-orange)"/>
+        <path d="M1364 134 C 1364 96, 1264 96, 1242 130" fill="none" stroke="#fb923c" stroke-width="2.2" marker-end="url(#arrow-orange)"/>
+        <text x="1336" y="106" text-anchor="middle" class="edge">到期搬回 pending</text>
+
+        <!-- Bridge from pending to processor -->
+        <path d="M1141 206 C 1141 352, 202 352, 202 462" fill="none" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrow-green)"/>
+        <text x="658" y="352" text-anchor="middle" class="edge">Server.Start 后 processor 开始轮询</text>
+
+        <!-- Main lane arrows -->
+        <path d="M312 514 L344 514" fill="none" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrow-green)"/>
+        <text x="328" y="502" text-anchor="middle" class="edge">原子抢占</text>
+        <path d="M598 514 L630 514" fill="none" stroke="#64748b" stroke-width="2.2" marker-end="url(#arrow)"/>
+        <text x="614" y="502" text-anchor="middle" class="edge">读 msg</text>
+        <path d="M840 514 L902 514" fill="none" stroke="#64748b" stroke-width="2.2" marker-end="url(#arrow)"/>
+        <path d="M1098 514 L1114 514" fill="none" stroke="#64748b" stroke-width="2.2" marker-end="url(#arrow)"/>
+
+        <path d="M1220 600 C 1220 606, 1280 606, 1280 608" fill="none" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrow-green)"/>
+        <text x="1248" y="618" class="edge">是</text>
+        <path d="M1114 514 C 1048 536, 1000 578, 1000 626" fill="none" stroke="#fb923c" stroke-width="2.3" marker-end="url(#arrow-orange)"/>
+        <text x="1048" y="560" class="edge">否</text>
+        <path d="M896 684 L862 684" fill="none" stroke="#fb923c" stroke-width="2.4" marker-end="url(#arrow-orange)"/>
+        <text x="878" y="672" text-anchor="middle" class="edge">是</text>
+        <path d="M1104 684 C 1162 702, 1227 724, 1227 768" fill="none" stroke="#fb7185" stroke-width="2.4" marker-end="url(#arrow-red)"/>
+        <text x="1168" y="710" class="edge">否</text>
+
+        <path d="M773 632 C 773 594, 1040 360, 1141 206" fill="none" stroke="#fb923c" stroke-width="2" stroke-dasharray="8 5" marker-end="url(#arrow-orange)"/>
+        <text x="918" y="614" text-anchor="middle" class="edge">重试到期回 pending</text>
+
+        <!-- Cleanup notes -->
+        <rect x="380" y="610" width="238" height="58" rx="8" fill="rgba(15, 23, 42, 0.86)" stroke="rgba(148, 163, 184, 0.34)" stroke-width="1"/>
+        <text x="499" y="634" text-anchor="middle" class="tiny">成功 / 失败都会清理执行态</text>
+        <text x="499" y="650" text-anchor="middle" class="key">LREM asynq:{q}:active 0 &lt;task_id&gt;</text>
+        <text x="499" y="668" text-anchor="middle" class="key">ZREM asynq:{q}:lease &lt;task_id&gt;</text>
+
+        <!-- Recover arrows -->
+        <path d="M328 853 L414 853" fill="none" stroke="#fb7185" stroke-width="2.4" marker-end="url(#arrow-red)"/>
+        <path d="M640 853 L668 853" fill="none" stroke="#fb7185" stroke-width="2.4" marker-end="url(#arrow-red)"/>
+        <path d="M772 792 C 772 760, 773 748, 773 744" fill="none" stroke="#fb923c" stroke-width="2.4" marker-end="url(#arrow-orange)"/>
+        <text x="800" y="762" class="edge">回 Retry</text>
+        <path d="M876 854 C 976 854, 1048 830, 1096 816" fill="none" stroke="#fb7185" stroke-width="2.4" marker-end="url(#arrow-red)"/>
+        <text x="986" y="870" text-anchor="middle" class="edge">进 Archive</text>
+
+        <!-- Heartbeat arrow -->
+        <path d="M1251 902 L1251 872" fill="none" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+        <!-- Legend -->
+        <rect x="64" y="982" width="1404" height="34" rx="8" fill="rgba(15, 23, 42, 0.9)" stroke="rgba(148, 163, 184, 0.24)" stroke-width="1"/>
+        <text x="90" y="1004" class="tiny">要点：入队写 HSET asynq:{q}:t:&lt;task_id&gt; msg &lt;TaskMessage&gt; 与 LPUSH/ZADD 状态集合；消费用 RPOPLPUSH asynq:{q}:pending asynq:{q}:active；lease 用 ZADD asynq:{q}:lease &lt;expire_at&gt; &lt;task_id&gt; 兜底恢复。</text>
+      </svg>
+    </section>
+
+    <footer class="footer">learn-by-mini · docs/code-research/asynq/diagrams · Asynq Flowchart with Redis Keys</footer>
+  </main>
+</body>
+</html>

@@ -10,6 +10,8 @@
 2. 入队、出队、重试、归档等关键状态迁移使用 Lua 脚本保证单次迁移原子性。
 3. `Server` 不只是 worker 循环，而是一组后台协程的组合：处理、转发、心跳、恢复、同步、健康检查、清理、聚合。
 4. Go 侧用接口收窄边界：公开层是 `Client`、`Server`、`Handler`、`ServeMux`、`Scheduler`；内部通过 `base.Broker` 隔离 Redis 实现。
+5. 队列级 Redis key 统一使用 `asynq:{<queue>}:...` hash tag，让同一队列内的 Lua 状态迁移可以落在同一个 Redis Cluster slot。
+6. Asynq 的状态空间可以按演进理解：从 `pending` 开始，逐步补上 `active + lease`、`retry/scheduled`、`archived/completed` 和聚合、观测等扩展状态。
 
 ## 文档索引
 
@@ -19,6 +21,11 @@
 - [04 依赖与生态](04_dependencies.md)
 - [05 核心工作流](05_workflow.md)
 - [06 代码阅读路径](06_learning_path.md)
+- [07 项目集成指南](07_project_integration.md)
+- [08 Redis Key 速查](08_redis_keys.md)
+- [09 从 0 设计 Asynq：一步一步演进](09_design_evolution.md)
+- [本机 Redis 示例](example/README.md)
+- [任务处理流程图与 Redis Key](diagrams/asynq_task_flow_keys.html)
 
 ## 项目概述
 
@@ -59,6 +66,21 @@
 
 - 目标：总结推荐阅读顺序，帮助后续按目标继续拆解源码。
 - 输出：[06_learning_path.md](06_learning_path.md)
+
+### 专题 G：项目集成
+
+- 目标：说明如何把 Asynq 集成进真实 Go 项目，并提供一个直接连接本机 Redis 的可运行示例。
+- 输出：[07_project_integration.md](07_project_integration.md)、[example/README.md](example/README.md)
+
+### 专题 H：Redis Key 速查
+
+- 目标：梳理 Asynq 源码中所有 Redis key 的命名、数据结构、用途、生命周期和排障入口。
+- 输出：[08_redis_keys.md](08_redis_keys.md)
+
+### 专题 I：从 0 设计 Asynq
+
+- 目标：从最小任务队列开始，按可靠性、调度、重试、结果保留、观测和聚合能力逐步推演 Asynq 为什么会形成当前状态机。
+- 输出：[09_design_evolution.md](09_design_evolution.md)
 
 ## 待解决疑问
 

@@ -102,6 +102,31 @@ graph TD
     RDB --> Lua脚本
 ```
 
+### 依赖图中的组件职责
+
+| 组件 | 它是什么 | 核心职责 | 为什么依赖关系这样设计 |
+|------|----------|----------|------------------------|
+| 业务代码 | 使用 Asynq 的应用层代码 | 创建任务、调用 `Client` 入队、启动 `Server` 消费任务、注册 `Handler`、用 `Inspector` 查看队列状态 | 业务代码只接触公开 API，不直接操作 Redis key 和内部状态机。 |
+| `Client` | 任务生产者 | 校验 `Task`，合并入队选项，生成 `TaskMessage`，调用 `Broker` 写入 pending、scheduled 或 group | 入队逻辑需要复用内部 Redis 状态迁移，但业务侧不应该知道 Redis 数据结构。 |
+| `Server` | worker 运行时总控 | 创建并启动 processor、forwarder、heartbeater、recoverer、syncer、aggregator、janitor、subscriber 等后台组件 | 单个 worker 服务不是一个循环，而是一组协作后台任务；`Server` 负责生命周期编排。 |
+| `Scheduler` | 周期任务调度器 | 解析 cron 表达式，到点后通过 `Client` 把任务入队，并记录 scheduler entry 和入队历史 | 周期任务本质上还是任务生产行为，所以调度器依赖 `Client`，不直接绕过入队路径。 |
+| `Inspector` | 队列与任务检查工具 | 查询队列列表、统计、任务详情，支持运行、归档、删除、暂停和恢复队列 | 检查和管理需要读取 Redis 的实际状态，所以它直接依赖 `RDB` 的 inspect 能力，而不是只走 `Broker` 接口。 |
+| `Processor` | 任务消费器 | 从队列取任务，创建 worker goroutine，调用 `Handler`，根据结果把任务置为完成、重试、归档或重新入队 | 它是业务 handler 和内部状态机之间的桥，既要依赖 `Handler`，也要依赖 `Broker` 完成状态迁移。 |
+| `Handler` | 业务处理边界 | 根据任务类型和载荷执行真实业务逻辑，返回成功、失败、跳过重试或撤销任务 | Asynq 把“任务如何处理”交给业务，把“失败后怎么迁移状态”留给 processor。 |
+| `Forwarder` | 延迟任务推进器 | 周期扫描 scheduled 和 retry，把到期任务转入 pending；如果任务有 group，则转入聚合分组 | 延迟和重试不由 processor 主动扫描，避免消费路径承担时间调度职责。 |
+| `Heartbeater` | 运行状态和租约维护器 | 周期写入 server/worker 快照，并延长 active 任务 lease | active 任务需要租约防丢，服务状态也需要可观测；这两个都适合由独立心跳组件维护。 |
+| `Recoverer` | 异常恢复器 | 扫描 lease 过期任务，把 worker 崩溃或超时留下的 active 任务转 retry 或 archived；回收超时 aggregation set | 它让系统不依赖 worker 正常退出，承认进程可能崩溃，并用 Redis 状态恢复任务。 |
+| `Syncer` | 状态同步补偿器 | 缓存 processor 中未能成功写入 Redis 的补偿操作，并后台重试 | Redis 写入可能临时失败；syncer 减少任务状态卡死在 active 的概率。 |
+| `Aggregator` | 聚合任务处理器 | 检查 group 是否达到聚合条件，读取 aggregation set，调用用户提供的聚合函数生成新任务 | 聚合是任务入队前后的特殊缓冲层，单独拆出可以让普通消费路径保持简单。 |
+| `Janitor` | 过期数据清理器 | 删除 completed 中已经过 retention 的任务和对应 task hash | 成功任务可以按配置保留结果，但保留期过后需要后台清理，避免 Redis 无限增长。 |
+| `Subscriber` | 取消通知订阅器 | 订阅 `asynq:cancel` 通道，收到 task ID 后取消正在执行的任务上下文 | 取消请求可能来自外部 inspector/API，需要通过 Redis PubSub 广播到正在处理任务的 server。 |
+| `Broker接口` | 内部消息代理抽象 | 定义入队、出队、完成、重试、归档、调度推进、租约、聚合、心跳和取消等操作 | 运行时组件依赖任务队列语义，而不是依赖 Redis 客户端细节。 |
+| `RDB` | `Broker` 的 Redis 实现 | 把 `Broker` 操作落到 Redis list、zset、hash、string、pubsub 和 Lua 脚本上 | Redis 是实际持久化和跨进程协调层；`RDB` 集中管理 key、脚本和错误转换。 |
+| `Redis` | 持久化和协调后端 | 保存任务详情、状态集合、租约、统计、心跳、调度历史和取消消息 | 分布式 worker 需要共享状态，Redis 提供低延迟数据结构和原子脚本执行能力。 |
+| `Lua脚本` | Redis 内原子状态迁移逻辑 | 保证入队、出队、完成、重试、归档、聚合切分等多 key 操作一次性完成 | Asynq 的状态迁移通常涉及多个 key，Lua 脚本避免中间态暴露给其他 worker。 |
+
+补充说明：`Healthchecker` 也是 `Server` 启动的后台组件，但上图没有单独画出。它定期调用 `Broker.Ping()`，再把结果交给用户配置的 healthcheck 回调，主要用于服务健康探测而不是任务状态迁移。
+
 ## 核心抽象
 
 - `Task`：业务任务的最小公开表示，包含类型、载荷、头信息和选项，见 `asynq.go:23`。

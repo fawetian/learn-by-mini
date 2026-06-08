@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="Asynq Task Flow">
+    <mxGraphModel dx="1800" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1840" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="lane_enqueue" value="Client 入队与到期转发" style="swimlane;startSize=34;whiteSpace=wrap;html=1;rounded=1;glass=0;fillColor=#e1f5fe;strokeColor=#0288d1;fontColor=#01579b;fontStyle=1;container=1;collapsible=0;recursiveResize=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="30" width="1780" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_worker" value="Server / Worker 正常消费链路" style="swimlane;startSize=34;whiteSpace=wrap;html=1;rounded=1;glass=0;fillColor=#e8f5e9;strokeColor=#388e3c;fontColor=#1b5e20;fontStyle=1;container=1;collapsible=0;recursiveResize=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="390" width="1780" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_recover" value="worker 崩溃与 lease 恢复链路" style="swimlane;startSize=34;whiteSpace=wrap;html=1;rounded=1;glass=0;fillColor=#ffebee;strokeColor=#c62828;fontColor=#b71c1c;fontStyle=1;container=1;collapsible=0;recursiveResize=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="790" width="1780" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="队列占位：q，例如 asynq:{default}:pending；task_id 为任务唯一 id。节点内为完整 Redis 命令。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1048" width="1780" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="task" value="创建 Task&#xa;Type / Payload" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontColor=#1b5e20;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="145" width="170" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="enqueue" value="Client.Enqueue&#xa;&#xa;SADD asynq:queues &amp;lt;q&amp;gt;&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; msg &amp;lt;TaskMessage&amp;gt;&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; state pending&#xa;LPUSH asynq:{q}:pending &amp;lt;task_id&amp;gt;&#xa;ZADD asynq:{q}:scheduled &amp;lt;process_at&amp;gt; &amp;lt;task_id&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontColor=#1f2937;fontSize=11;align=center;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="310" y="85" width="380" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="choice_immediate" value="立即执行？&#xa;ProcessAt / ProcessIn" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#5f4300;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="750" y="125" width="170" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="pending" value="待消费队列&#xa;&#xa;LPUSH asynq:{q}:pending &amp;lt;task_id&amp;gt;" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontColor=#4b2e00;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="85" width="330" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="scheduled" value="延迟 / 定时集合&#xa;&#xa;ZADD asynq:{q}:scheduled &amp;lt;process_at&amp;gt; &amp;lt;task_id&amp;gt;" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#5f4300;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="230" width="330" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="forwarder" value="forwarder 到期转发&#xa;&#xa;ZRANGEBYSCORE asynq:{q}:scheduled -inf &amp;lt;now&amp;gt;&#xa;ZRANGEBYSCORE asynq:{q}:retry -inf &amp;lt;now&amp;gt;&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; state pending&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; pending_since &amp;lt;now&amp;gt;&#xa;LPUSH asynq:{q}:pending &amp;lt;task_id&amp;gt;&#xa;ZREM asynq:{q}:scheduled &amp;lt;task_id&amp;gt;&#xa;ZREM asynq:{q}:retry &amp;lt;task_id&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontColor=#4b2e00;fontSize=10;align=center;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="85" width="360" height="235" as="geometry" />
+        </mxCell>
+        <mxCell id="dequeue" value="processor.Dequeue&#xa;&#xa;RPOPLPUSH asynq:{q}:pending asynq:{q}:active" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontColor=#1b5e20;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="505" width="340" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="active" value="写执行态与 lease&#xa;&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; state active&#xa;HDEL asynq:{q}:t:&amp;lt;task_id&amp;gt; pending_since&#xa;ZADD asynq:{q}:lease &amp;lt;expire_at&amp;gt; &amp;lt;task_id&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontColor=#1b5e20;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="485" width="380" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="load_msg" value="读取任务内容&#xa;&#xa;HGET asynq:{q}:t:&amp;lt;task_id&amp;gt; msg" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontColor=#3b1f47;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="505" width="310" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="handler" value="Handler.ProcessTask&#xa;&#xa;业务处理函数&#xa;返回 nil / error / SkipRetry" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontColor=#1f2937;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="505" width="280" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="choice_success" value="处理成功？&#xa;err == nil" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#5f4300;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1660" y="500" width="130" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="done" value="Done&#xa;&#xa;LREM asynq:{q}:active 0 &amp;lt;task_id&amp;gt;&#xa;ZREM asynq:{q}:lease &amp;lt;task_id&amp;gt;&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; state completed&#xa;ZADD asynq:{q}:completed &amp;lt;done_at&amp;gt; &amp;lt;task_id&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontColor=#1b5e20;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="650" width="350" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="choice_retry" value="还能重试？&#xa;Retried &lt; Retry" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#5f4300;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="645" width="145" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="retry" value="Retry&#xa;&#xa;LREM asynq:{q}:active 0 &amp;lt;task_id&amp;gt;&#xa;ZREM asynq:{q}:lease &amp;lt;task_id&amp;gt;&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; state retry&#xa;ZADD asynq:{q}:retry &amp;lt;retry_at&amp;gt; &amp;lt;task_id&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontColor=#4b2e00;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="655" width="340" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="crash" value="worker 崩溃&#xa;不会新写 Redis&#xa;已有 lease 过期" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#7f1d1d;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="880" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="recoverer" value="recoverer 扫描&#xa;&#xa;ZRANGEBYSCORE asynq:{q}:lease -inf &amp;lt;cutoff&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#7f1d1d;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="860" width="360" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="choice_recover_retry" value="恢复后可重试？&#xa;Retried &lt; Retry" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#5f4300;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="850" y="855" width="170" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="archive" value="Archive&#xa;&#xa;LREM asynq:{q}:active 0 &amp;lt;task_id&amp;gt;&#xa;ZREM asynq:{q}:lease &amp;lt;task_id&amp;gt;&#xa;HSET asynq:{q}:t:&amp;lt;task_id&amp;gt; state archived&#xa;ZADD asynq:{q}:archived &amp;lt;died_at&amp;gt; &amp;lt;task_id&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#7f1d1d;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="855" width="360" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="heartbeat" value="运行态观测&#xa;&#xa;SETEX asynq:servers:{host:pid:sid} &amp;lt;ttl&amp;gt; &amp;lt;info&amp;gt;&#xa;HSET asynq:workers:{host:pid:sid} &amp;lt;wid&amp;gt; &amp;lt;data&amp;gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1510" y="865" width="260" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="e_task_enqueue" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#6c8ebf;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="task" target="enqueue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_enqueue_choice" value="计算选项" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#6c8ebf;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="enqueue" target="choice_immediate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_choice_pending" value="Yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d79b00;exitX=1;exitY=0.35;entryX=0;entryY=0.5;" edge="1" parent="1" source="choice_immediate" target="pending">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_choice_scheduled" value="No" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d6b656;exitX=0.55;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="choice_immediate" target="scheduled">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="835" y="275" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_scheduled_forwarder" value="到期扫描" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d79b00;exitX=1;exitY=0.5;entryX=0;entryY=0.75;" edge="1" parent="1" source="scheduled" target="forwarder">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_forwarder_pending" value="搬回 pending" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d79b00;exitX=0;exitY=0.25;entryX=1;entryY=0.3;" edge="1" parent="1" source="forwarder" target="pending">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1370" y="120" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_pending_dequeue" value="Server.Start 后 processor 轮询" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="pending" target="dequeue">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1175" y="370" />
+              <mxPoint x="250" y="370" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_dequeue_active" value="原子抢占" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="dequeue" target="active">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_active_load" value="读 msg" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#9673a6;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="active" target="load_msg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_load_handler" value="执行业务" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#6c8ebf;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="load_msg" target="handler">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_handler_success" value="返回结果" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d6b656;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="handler" target="choice_success">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_success_done" value="Yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="choice_success" target="done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_success_retry_choice" value="No" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d79b00;exitX=0;exitY=0.55;entryX=1;entryY=0.35;" edge="1" parent="1" source="choice_success" target="choice_retry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_retry_choice_retry" value="Yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d79b00;exitX=0;exitY=0.5;entryX=1;entryY=0.45;" edge="1" parent="1" source="choice_retry" target="retry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_retry_forwarder" value="retry 到期后回流" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d79b00;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="retry" target="forwarder">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="930" y="435" />
+              <mxPoint x="1590" y="435" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_retry_choice_archive" value="No" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#b85450;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="choice_retry" target="archive">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1210" y="820" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_crash_recoverer" value="lease 超时" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#b85450;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="crash" target="recoverer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_recoverer_choice" value="扫描过期 lease" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#b85450;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="recoverer" target="choice_recover_retry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_recover_choice_retry" value="Yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#d79b00;exitX=0.35;exitY=0;entryX=0.25;entryY=1;" edge="1" parent="1" source="choice_recover_retry" target="retry">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="910" y="830" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_recover_choice_archive" value="No" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#b85450;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="choice_recover_retry" target="archive">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
